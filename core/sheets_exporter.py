@@ -2,6 +2,7 @@ import os
 import re
 from datetime import datetime
 import gspread
+import streamlit as st
 from google.oauth2.service_account import Credentials
 from core.analyzer import AuditResult
 
@@ -98,16 +99,21 @@ def append_audit_to_sheet(
     sheet_id: str | None = None
 ) -> int:
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
-    resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "google_creds.json").strip()
 
-    if not os.path.exists(resolved_creds):
-        fallback = "credentials.json" if resolved_creds == "google_creds.json" else "google_creds.json"
-        if os.path.exists(fallback):
-            resolved_creds = fallback
-        else:
-            raise FileNotFoundError(f"Файл ключа '{resolved_creds}' не найден!")
+    # Универсальная инициализация ключей (Streamlit Cloud + Локальная разработка)
+    if "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    else:
+        resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "google_creds.json").strip()
+        if not os.path.exists(resolved_creds):
+            fallback = "credentials.json" if resolved_creds == "google_creds.json" else "google_creds.json"
+            if os.path.exists(fallback):
+                resolved_creds = fallback
+            else:
+                raise FileNotFoundError(f"Файл ключа '{resolved_creds}' не найден!")
+        creds = Credentials.from_service_account_file(resolved_creds, scopes=SCOPES)
 
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(target_sheet_id)
 
