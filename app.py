@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import tempfile
 from datetime import datetime
 import streamlit as st
@@ -318,8 +319,9 @@ div.stButton > button:first-child:hover {
 """
 st.markdown(OBSIDIAN_DARK_STYLE, unsafe_allow_html=True)
 
+# Изменение 1: Убираем хардкод. Чтобы второй ключ работал, пропишите SECOND_API_KEY в файл .env
 system_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-SECOND_API_KEY = "AQ.Ab8RN6LC-GQ3YpYy7urc2DgvTmSXVW25zkARPMb7hgXY2hhyUA"
+second_api_key = os.getenv("SECOND_API_KEY", "").strip()
 
 with st.sidebar:
     st.caption("Параметры системы")
@@ -327,14 +329,14 @@ with st.sidebar:
         key_source = st.selectbox(
             "Выбор API-ключа:",
             ["Основной (из .env)", "Резервный (второй ключ)", "Ввести вручную"],
-            index=1, # По умолчанию выставим второй на всякий случай
+            index=0,
             help="Выберите источник API-ключа для обхода лимитов"
         )
         
         if key_source == "Основной (из .env)":
             resolved_api_key = system_api_key
         elif key_source == "Резервный (второй ключ)":
-            resolved_api_key = SECOND_API_KEY
+            resolved_api_key = second_api_key
         else:
             user_custom_key = st.text_input(
                 "Свой API Key:",
@@ -346,7 +348,7 @@ with st.sidebar:
 
         model_choice = st.selectbox(
             "Модель аудита:",
-            ["gemini-3.6-flash"],
+            ["gemini-2.5-flash"],
             index=0,
             help="Используется актуальный флагман Google Gemini"
         )
@@ -427,7 +429,6 @@ with st.expander("Параметры сессии и загрузка аудио
         
         c_idx = call_types.index(st.session_state["input_call_type"]) if st.session_state["input_call_type"] in call_types else 0
         
-        # Аккуратный выпадающий список вместо громоздкого радио-столбика
         call_type = st.selectbox(
             "Тип контакта:",
             call_types,
@@ -467,31 +468,38 @@ if start_audit:
             file_ext = file_name.split('.')[-1].lower()
             
             st.write("Сохранение исходного аудио...")
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
-                tmp.write(file_buffer)
-                tmp_path = tmp.name
-
-            compressed_path = tmp_path
+            # Изменение 2: Даем интерфейсу обновиться перед синхронной блокировкой
+            time.sleep(0.1) 
             
-            if PYDUB_AVAILABLE:
-                st.write("Сжатие аудио для ускорения обработки (моно, 32 kbps)...")
-                try:
-                    audio = AudioSegment.from_file(tmp_path)
-                    audio = audio.set_channels(1).set_frame_rate(16000)
-                    compressed_path = tmp_path + "_compressed.mp3"
-                    audio.export(compressed_path, format="mp3", bitrate="32k")
-                    
-                    orig_size = os.path.getsize(tmp_path) / (1024 * 1024)
-                    new_size = os.path.getsize(compressed_path) / (1024 * 1024)
-                    st.write(f"Размер уменьшен: с {orig_size:.1f} МБ до {new_size:.1f} МБ")
-                except Exception as e:
-                    st.write(f"⚠️ Сжатие пропущено (вероятно, не установлен FFmpeg): {e}")
-                    compressed_path = tmp_path
-            else:
-                st.write("⚠️ Библиотека pydub не найдена, сжатие пропущено.")
-
-            st.write("Отправка в Google Cloud и генерация аудита (пожалуйста, подождите)...")
+            # Изменение 4: Улучшенная работа с временными файлами
             try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
+                    tmp.write(file_buffer)
+                    tmp_path = tmp.name
+
+                compressed_path = tmp_path
+                
+                if PYDUB_AVAILABLE:
+                    st.write("Сжатие аудио для ускорения обработки (моно, 32 kbps)...")
+                    time.sleep(0.1)
+                    try:
+                        audio = AudioSegment.from_file(tmp_path)
+                        audio = audio.set_channels(1).set_frame_rate(16000)
+                        compressed_path = tmp_path + "_compressed.mp3"
+                        audio.export(compressed_path, format="mp3", bitrate="32k")
+                        
+                        orig_size = os.path.getsize(tmp_path) / (1024 * 1024)
+                        new_size = os.path.getsize(compressed_path) / (1024 * 1024)
+                        st.write(f"Размер уменьшен: с {orig_size:.1f} МБ до {new_size:.1f} МБ")
+                    except Exception as e:
+                        st.write(f"⚠️ Сжатие пропущено (вероятно, не установлен FFmpeg): {e}")
+                        compressed_path = tmp_path
+                else:
+                    st.write("⚠️ Библиотека pydub не найдена, сжатие пропущено.")
+
+                st.write("Отправка в Google Cloud и генерация аудита (пожалуйста, подождите)...")
+                time.sleep(0.1)
+                
                 result = analyze_audio_call(
                     audio_path=compressed_path,
                     manager_name=manager_name,
@@ -509,29 +517,38 @@ if start_audit:
                 st.session_state["audio_filename"] = file_name
                 st.session_state["active_error_idx"] = (
                     result.primary_error_index 
-                    if result.primary_error_index < len(result.all_errors) 
+                    if getattr(result, "all_errors", None) and result.primary_error_index < len(result.all_errors) 
                     else 0
                 )
-                st.session_state["active_target"] = format_sentence_case(
-                    result.all_errors[st.session_state["active_error_idx"]].sprint_target 
-                    if result.all_errors else ""
-                )
+                
+                if getattr(result, "all_errors", None):
+                    st.session_state["active_target"] = format_sentence_case(result.all_errors[st.session_state["active_error_idx"]].sprint_target)
+                else:
+                    st.session_state["active_target"] = "Поддерживать текущий уровень качества"
+                    
                 st.session_state["active_script"] = format_sentence_case(result.rop_1on1_script)
                 
                 status.update(label="Аудит успешно завершен", state="complete", expanded=False)
-                st.rerun()
+                # Изменение 3: Убрали st.rerun(), чтобы матрица отрисовалась плавно и без сброса статуса
+                
             except Exception as e:
-                status.update(label="Временная перегрузка серверов", state="error", expanded=True)
+                status.update(label="Временная перегрузка серверов или ошибка", state="error", expanded=True)
                 err_str = str(e)
                 if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
                     st.warning("⚠️ Серверы Google сейчас сильно загружены. Попробуйте переключиться на другой API-ключ в боковой панели или повторите попытку через пару минут.")
                 else:
                     st.error(f"Сбой выполнения аудита: {err_str}")
             finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-                if compressed_path != tmp_path and os.path.exists(compressed_path):
-                    os.remove(compressed_path)
+                if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except:
+                        pass
+                if 'compressed_path' in locals() and compressed_path != tmp_path and os.path.exists(compressed_path):
+                    try:
+                        os.remove(compressed_path)
+                    except:
+                        pass
 
 if "audit_result" in st.session_state:
     res = st.session_state["audit_result"]
@@ -609,7 +626,6 @@ if "audit_result" in st.session_state:
         justification = format_sentence_case(getattr(res, "score_justification", "Оценка сформирована по адаптивным критериям."))
         st.markdown(f"<div style='font-size: 1rem; line-height: 1.6; color: #CBD5E1; padding-top: 4px;'><b style='color: #FFFFFF;'>Обоснование:</b> {justification}</div>", unsafe_allow_html=True)
 
-    # Динамическая декомпозиция узлов
     st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
 
     with st.expander("Динамическая матрица оценки (Адаптивные узлы)", expanded=True):
@@ -641,7 +657,6 @@ if "audit_result" in st.session_state:
         else:
             st.info("Для данного типа звонка детальная декомпозиция по узлам не потребовалась.")
 
-    # Сворачиваемый блок со списком всех сильных сторон диалога
     with st.expander("✨ Полный реестр сильных сторон и успешных моментов диалога", expanded=False):
         if hasattr(res, "all_positive_points") and res.all_positive_points:
             for pt in res.all_positive_points:
@@ -669,7 +684,7 @@ if "audit_result" in st.session_state:
         unsafe_allow_html=True
     )
 
-    if res.all_errors:
+    if getattr(res, "all_errors", None):
         error_options = [
             f"[{getattr(err, 'timestamp', '00:00')}] {getattr(err, 'stage', 'Этап')}: {format_sentence_case(getattr(err, 'description', ''))[:90]}..." 
             for err in res.all_errors
@@ -797,10 +812,11 @@ if "audit_result" in st.session_state:
                     status.update(label="Аудит успешно внесен в реестр", state="complete", expanded=False)
             except Exception as ex:
                 st.error(f"Ошибка записи: {str(ex)}")
-                # Генерация полного текста отчета для печати / выгрузки
+
+    # Изменение 5: Защита формирования отчета при идеальных звонках без ошибок
     if "audit_result" in st.session_state:
         res = st.session_state["audit_result"]
-        active_err = res.all_errors[st.session_state.get("active_error_idx", 0)] if res.all_errors else None
+        active_err = res.all_errors[st.session_state.get("active_error_idx", 0)] if getattr(res, "all_errors", None) else None
         
         report_lines = [
             "=" * 50,
@@ -822,7 +838,7 @@ if "audit_result" in st.session_state:
         for n in getattr(res, "evaluated_nodes", []):
             report_lines.append(f"• [{n.node_title}] — {n.score}/{n.max_score}")
             report_lines.append(f"  Плюс: {n.positives}")
-            if n.growth_areas:
+            if hasattr(n, 'growth_areas') and n.growth_areas:
                 report_lines.append(f"  Зона роста: {n.growth_areas}")
         
         report_lines.extend([
@@ -841,6 +857,8 @@ if "audit_result" in st.session_state:
                 f"Эталонный скрипт: {active_err.correct_alternative_script}",
                 f"Экспертная опора: {active_err.support_growth_potential}"
             ])
+        else:
+            report_lines.append("Критических ошибок и зон роста не выявлено. Идеальный звонок.")
             
         report_lines.extend([
             "-" * 50,
@@ -850,12 +868,10 @@ if "audit_result" in st.session_state:
             "6. СКРИПТ РАЗГОВОРА РОПА (1-on-1):",
             f"{st.session_state.get('active_script', '')}",
             "=" * 50
-        ]
-        )
+        ])
         
         report_text = "\n".join(report_lines)
 
-        # Кнопка скачивания файла для печати
         st.download_button(
             label="📄 Скачать полный отчет для печати (TXT)",
             data=report_text,
