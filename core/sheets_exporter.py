@@ -107,7 +107,7 @@ def append_audit_to_sheet(
         else:
             raise FileNotFoundError(f"Файл ключа '{resolved_creds}' не найден!")
 
-    creds = Credentials.from_service_account_file(resolved_creds, scopes=SCOPES)
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(target_sheet_id)
 
