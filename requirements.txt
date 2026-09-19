@@ -5,3 +5,4 @@ gspread>=6.1.0
 pydantic>=2.7.0
 python-dotenv>=1.0.1
 mutagen>=1.47.0
+pydub

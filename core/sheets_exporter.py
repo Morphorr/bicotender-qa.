@@ -101,8 +101,9 @@ def append_audit_to_sheet(
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
 
     # Универсальная инициализация ключей (Streamlit Cloud + Локальная разработка)
-    if "gcp_service_account" in st.secrets:
-        creds_dict = dict(st.secrets["gcp_service_account"])
+    if "GOOGLE_CREDS_JSON" in st.secrets:
+        import json
+        creds_dict = json.loads(st.secrets["GOOGLE_CREDS_JSON"])
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     else:
         resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "google_creds.json").strip()
