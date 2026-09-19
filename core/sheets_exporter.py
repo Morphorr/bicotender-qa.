@@ -103,6 +103,11 @@ def append_audit_to_sheet(
     # Универсальная инициализация ключей (Streamlit Cloud + Локальная разработка)
     if "gcp_service_account" in st.secrets:
         creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # ИСПРАВЛЕНИЕ ОШИБКИ PEM: превращаем текстовые \n в настоящие переносы строк
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     else:
         resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "credentials.json").strip()
