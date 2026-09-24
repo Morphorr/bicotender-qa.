@@ -90,7 +90,7 @@ def append_audit_to_sheet(
     sheet_id: str | None = None
 ) -> int:
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
- creds = None
+    creds = None
 
     # 1. Попытка авторизации через Streamlit Secrets
     try:
