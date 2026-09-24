@@ -1,5 +1,6 @@
 import os
 import re
+import textwrap
 from datetime import datetime
 import gspread
 import streamlit as st
@@ -78,7 +79,7 @@ def clean_alternative_script(raw_val: str, quote_fallback: str = "") -> str:
     return val
 
 
-def append_audit_to_sheet(
+def def append_audit_to_sheet(
     audit: AuditResult,
     manager_name: str,
     company_name: str,
@@ -96,7 +97,16 @@ def append_audit_to_sheet(
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+                # Жесткая очистка ключа от искажений TOML
+                raw_key = creds_dict["private_key"]
+                raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
+                raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
+                raw_key = raw_key.replace("\\n", "").replace("\n", "").replace(" ", "")
+                
+                # Сборка эталонного PEM-формата заново (строки строго по 64 символа)
+                fixed_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(raw_key, 64)) + "\n-----END PRIVATE KEY-----\n"
+                creds_dict["private_key"] = fixed_key
+                
             creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     except Exception:
         creds = None
@@ -114,6 +124,8 @@ def append_audit_to_sheet(
 
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(target_sheet_id)
+    
+    # ... дальше идет блок try...except с gspread.WorksheetNotFound, оставляй его без изменений
 
     try:
         sheet = spreadsheet.worksheet(TARGET_WORKSHEET_NAME)
