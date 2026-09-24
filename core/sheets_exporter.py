@@ -79,7 +79,7 @@ def clean_alternative_script(raw_val: str, quote_fallback: str = "") -> str:
     return val
 
 
-def def append_audit_to_sheet(
+def append_audit_to_sheet(
     audit: AuditResult,
     manager_name: str,
     company_name: str,
@@ -124,8 +124,6 @@ def def append_audit_to_sheet(
 
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(target_sheet_id)
-    
-    # ... дальше идет блок try...except с gspread.WorksheetNotFound, оставляй его без изменений
 
     try:
         sheet = spreadsheet.worksheet(TARGET_WORKSHEET_NAME)
