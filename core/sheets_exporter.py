@@ -1,6 +1,5 @@
 import os
 import re
-import textwrap
 from datetime import datetime
 import gspread
 import streamlit as st
@@ -97,24 +96,17 @@ def append_audit_to_sheet(
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             if "private_key" in creds_dict:
-                # Жесткая очистка ключа от искажений TOML
-                raw_key = creds_dict["private_key"]
-                raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
-                raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
-                raw_key = raw_key.replace("\\n", "").replace("\n", "").replace(" ", "")
-                
-                # Сборка эталонного PEM-формата заново (строки строго по 64 символа)
-                fixed_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(textwrap.wrap(raw_key, 64)) + "\n-----END PRIVATE KEY-----\n"
-                creds_dict["private_key"] = fixed_key
-                
+                # Официальный и самый надежный метод обработки ключей из TOML
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
             creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         else:
             raise ValueError("Секция [gcp_service_account] отсутствует в настройках Streamlit Secrets!")
     except FileNotFoundError:
-        # Глушим ошибку только при локальном запуске (когда нет файла secrets.toml)
+        # Глушим ошибку ТОЛЬКО при локальном запуске
         creds = None
     except Exception as e:
-        # Выводим реальную ошибку на боевом сервере!
+        # Выводим реальную ошибку на боевом сервере
         raise RuntimeError(f"Сбой при сборке ключа из Streamlit Secrets: {str(e)}")
 
     # 2. Фолбэк на локальный файл credentials.json
