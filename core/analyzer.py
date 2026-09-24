@@ -112,7 +112,9 @@ def analyze_audio_call(
         raise ValueError("Не найден токен авторизации GEMINI_API_KEY!")
 
     clean_model = "gemini-1.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
+    
+    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Передаем ключ прямо в URL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={token.strip()}"
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Аудиофайл не найден: {audio_path}")
@@ -141,8 +143,10 @@ def analyze_audio_call(
         }
     }
 
-    headers = {"x-goog-api-key": token.strip(), "Content-Type": "application/json"}
+    # Убрали x-goog-api-key из заголовков, чтобы не путать сервера Google
+    headers = {"Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=payload)
+    
     if response.status_code != 200:
         raise RuntimeError(f"Ошибка API Gemini [{response.status_code}]: {response.text}")
 
@@ -156,7 +160,9 @@ def regenerate_feedback_for_error(
 ) -> FeedbackRegen:
     token = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     clean_model = "gemini-1.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
+    
+    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Передаем ключ прямо в URL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={token.strip()}"
 
     prompt = f"Менеджер: {manager_name}\nПобеда: {main_victory}\nОшибка: {selected_error.stage} - {selected_error.description}"
     payload = {
@@ -168,9 +174,13 @@ def regenerate_feedback_for_error(
             "responseSchema": REGEN_SCHEMA_DICT
         }
     }
-    headers = {"x-goog-api-key": token.strip(), "Content-Type": "application/json"}
+    
+    # Убрали x-goog-api-key из заголовков
+    headers = {"Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=payload)
+    
     if response.status_code != 200:
         raise RuntimeError(f"Ошибка регенерации [{response.status_code}]: {response.text}")
+        
     res_json = response.json()
     return FeedbackRegen.model_validate(json.loads(res_json["candidates"][0]["content"]["parts"][0]["text"]))
