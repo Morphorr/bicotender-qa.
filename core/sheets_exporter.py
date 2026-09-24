@@ -88,31 +88,37 @@ def append_audit_to_sheet(
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
     creds = None
 
-    # 1. Архитектурно надежная авторизация (парсинг цельного JSON)
+    # 1. Проверяем, доступны ли секреты Streamlit
     try:
-        if "GCP_CREDENTIALS" in st.secrets:
-            # Отраслевой стандарт: читаем JSON как единую строку без вмешательства TOML
-            creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
-            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        elif "gcp_service_account" in st.secrets:
-            # На случай, если старый блок остался
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        has_secrets = hasattr(st, "secrets") and len(st.secrets) > 0
     except Exception:
-        # При локальном запуске (когда секретов нет) плавно переходим к локальному файлу
-        creds = None
+        has_secrets = False
 
-    # 2. Фолбэк на локальный файл
-    if creds is None:
+    if has_secrets and ("GCP_CREDENTIALS" in st.secrets or "gcp_service_account" in st.secrets):
+        # Мы на боевом сервере. Любая ошибка здесь — критическая.
+        try:
+            if "GCP_CREDENTIALS" in st.secrets:
+                raw_json = st.secrets["GCP_CREDENTIALS"]
+                creds_dict = json.loads(raw_json)
+                creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            elif "gcp_service_account" in st.secrets:
+                creds_dict = dict(st.secrets["gcp_service_account"])
+                if "private_key" in creds_dict:
+                    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Секрет GCP_CREDENTIALS содержит невалидный JSON. Ошибка парсинга: {str(e)}. Проверьте кавычки и запятые в панели Secrets.")
+        except Exception as e:
+            raise RuntimeError(f"Критический сбой при чтении ключа из Streamlit Secrets: {str(e)}")
+    else:
+        # 2. Мы локально: фолбэк на файл credentials.json
         resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "credentials.json").strip()
         if not os.path.exists(resolved_creds):
             fallback = "google_creds.json" if resolved_creds == "credentials.json" else "credentials.json"
             if os.path.exists(fallback):
                 resolved_creds = fallback
             else:
-                raise FileNotFoundError(f"Файл ключа '{resolved_creds}' не найден!")
+                raise FileNotFoundError(f"Файл ключа '{resolved_creds}' не найден ни в облаке, ни локально!")
         creds = Credentials.from_service_account_file(resolved_creds, scopes=SCOPES)
 
     client = gspread.authorize(creds)
