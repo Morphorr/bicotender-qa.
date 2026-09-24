@@ -102,19 +102,40 @@ REGEN_SCHEMA_DICT = {
     }
 }
 
+def _get_valid_gemini_key(passed_key: Optional[str] = None) -> str:
+    """Жесткая валидация ключа. Гарантирует, что в API не улетит JSON или мусорный текст."""
+    valid_prefixes = ("AIza", "AQ.")
+    
+    if passed_key and isinstance(passed_key, str) and passed_key.strip().startswith(valid_prefixes):
+        return passed_key.strip()
+    
+    # 1. Прямое чтение из Streamlit Secrets
+    try:
+        import streamlit as st
+        if "GEMINI_API_KEY" in st.secrets:
+            val = st.secrets["GEMINI_API_KEY"]
+            if isinstance(val, str) and val.strip().startswith(valid_prefixes):
+                return val.strip()
+    except Exception:
+        pass
+        
+    # 2. Фолбэк на локальный файл .env
+    for env_var in ["GEMINI_API_KEY", "GOOGLE_API_KEY"]:
+        val = os.getenv(env_var)
+        if val and isinstance(val, str) and val.strip().startswith(valid_prefixes):
+            return val.strip()
+            
+    raise ValueError("Критическая ошибка: В скрипт попал мусорный токен вместо ключа Gemini. Убедитесь, что GEMINI_API_KEY настроен правильно и начинается с 'AQ.' или 'AIza'.")
+
+
 def analyze_audio_call(
     audio_path: str, manager_name: str, call_type: str, 
     client_name: str = "", crm_url: str = "", custom_context: str = "", 
     model_name: str = "gemini-3.6-flash", api_key: Optional[str] = None, max_retries: int = 5
 ) -> AuditResult:
-    token = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not token:
-        raise ValueError("Не найден токен авторизации GEMINI_API_KEY!")
-
+    token = _get_valid_gemini_key(api_key)
     clean_model = "gemini-1.5-flash"
-    
-    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Передаем ключ прямо в URL
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={token.strip()}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Аудиофайл не найден: {audio_path}")
@@ -143,8 +164,8 @@ def analyze_audio_call(
         }
     }
 
-    # Убрали x-goog-api-key из заголовков, чтобы не путать сервера Google
-    headers = {"Content-Type": "application/json"}
+    # Возвращаем стандартный заголовок, так как теперь ключ гарантированно чистый
+    headers = {"x-goog-api-key": token, "Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=payload)
     
     if response.status_code != 200:
@@ -158,11 +179,9 @@ def regenerate_feedback_for_error(
     manager_name: str, main_victory: str, selected_error: CallError,
     model_name: str = "gemini-3.6-flash", api_key: Optional[str] = None
 ) -> FeedbackRegen:
-    token = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    token = _get_valid_gemini_key(api_key)
     clean_model = "gemini-1.5-flash"
-    
-    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Передаем ключ прямо в URL
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={token.strip()}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
 
     prompt = f"Менеджер: {manager_name}\nПобеда: {main_victory}\nОшибка: {selected_error.stage} - {selected_error.description}"
     payload = {
@@ -175,8 +194,7 @@ def regenerate_feedback_for_error(
         }
     }
     
-    # Убрали x-goog-api-key из заголовков
-    headers = {"Content-Type": "application/json"}
+    headers = {"x-goog-api-key": token, "Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=payload)
     
     if response.status_code != 200:
