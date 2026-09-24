@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import base64
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -8,9 +7,6 @@ from dotenv import load_dotenv
 import requests
 
 load_dotenv()
-
-# --- ТУМБЛЕР МОК-РЕЖИМА (True = симуляция без траты токенов, False = реальный API) ---
-USE_MOCK_MODE = True
 
 class DynamicNode(BaseModel):
     node_title: str = Field(description="Название этапа, релевантное для данного архетипа звонка")
@@ -106,55 +102,11 @@ REGEN_SCHEMA_DICT = {
     }
 }
 
-def _get_mock_audit_result() -> AuditResult:
-    return AuditResult(
-        detected_call_archetype="Холодный звонок / Квалификация потребности по тендерному сопровождению",
-        goal_achievement_index=85,
-        total_score=88,
-        call_duration="03:45",
-        stop_factor="Отсутствуют",
-        score_justification="Менеджер уверенно держал диалог, отлично отработал возражения по стоимости услуг BicoTender.",
-        main_victory="Успешно зафиксирована договоренность на отправку коммерческого предложения.",
-        all_positive_points=[
-            "Уверенное и доброжелательное приветствие",
-            "Четкая фиксация договоренности о следующем шаге"
-        ],
-        evaluated_nodes=[
-            DynamicNode(node_title="Установление контакта", score=10, max_score=10, criteria="Энергетика, имя", positives="Отличный старт", growth_areas="Нет"),
-            DynamicNode(node_title="Выявление потребностей", score=15, max_score=20, criteria="Вопросы", positives="Выяснили сферу", growth_areas="Мало вопросов"),
-            DynamicNode(node_title="Презентация решения", score=25, max_score=25, criteria="ХПВ", positives="Идеально", growth_areas="Нет")
-        ],
-        all_errors=[
-            CallError(
-                timestamp="01:15",
-                stage="Выявление потребностей",
-                description="Ранняя презентация тарифов",
-                quote="А давайте я вам сразу тарифы наши покажу?",
-                correct_alternative_script="«Подскажите, а в каких процедурах участвуете?»",
-                support_growth_potential="Углубление в специфику повышает конверсию.",
-                sprint_target="Задавать открытые вопросы",
-                chronic_tag="Ранняя презентация"
-            )
-        ],
-        primary_error_index=0,
-        rop_1on1_script="Отличный звонок, давай зафиксируем фокус на открытых вопросах."
-    )
-
-def _get_mock_regen_result() -> FeedbackRegen:
-    return FeedbackRegen(
-        sprint_target="Увеличить количество открытых вопросов на 30%",
-        rop_1on1_script="Используй метод бутерброда."
-    )
-
 def analyze_audio_call(
     audio_path: str, manager_name: str, call_type: str, 
     client_name: str = "", crm_url: str = "", custom_context: str = "", 
     model_name: str = "gemini-3.6-flash", api_key: Optional[str] = None, max_retries: int = 5
 ) -> AuditResult:
-    if USE_MOCK_MODE:
-        time.sleep(1.0)
-        return _get_mock_audit_result()
-
     token = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not token:
         raise ValueError("Не найден токен авторизации GEMINI_API_KEY!")
@@ -202,10 +154,6 @@ def regenerate_feedback_for_error(
     manager_name: str, main_victory: str, selected_error: CallError,
     model_name: str = "gemini-3.6-flash", api_key: Optional[str] = None
 ) -> FeedbackRegen:
-    if USE_MOCK_MODE:
-        time.sleep(0.5)
-        return _get_mock_regen_result()
-
     token = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     clean_model = "gemini-1.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent"
