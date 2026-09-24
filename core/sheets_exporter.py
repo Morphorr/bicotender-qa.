@@ -90,7 +90,7 @@ def append_audit_to_sheet(
     sheet_id: str | None = None
 ) -> int:
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
-    creds = None
+ creds = None
 
     # 1. Попытка авторизации через Streamlit Secrets
     try:
@@ -108,8 +108,14 @@ def append_audit_to_sheet(
                 creds_dict["private_key"] = fixed_key
                 
             creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    except Exception:
+        else:
+            raise ValueError("Секция [gcp_service_account] отсутствует в настройках Streamlit Secrets!")
+    except FileNotFoundError:
+        # Глушим ошибку только при локальном запуске (когда нет файла secrets.toml)
         creds = None
+    except Exception as e:
+        # Выводим реальную ошибку на боевом сервере!
+        raise RuntimeError(f"Сбой при сборке ключа из Streamlit Secrets: {str(e)}")
 
     # 2. Фолбэк на локальный файл credentials.json
     if creds is None:
