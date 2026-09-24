@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from datetime import datetime
 import gspread
 import streamlit as st
@@ -25,7 +26,6 @@ def hex_to_rgb(hex_str: str):
 
 
 def clean_caps_lock(text: str) -> str:
-    """Удаляет сплошной CAPS LOCK и форматирует предложения с заглавной буквы."""
     if not text:
         return ""
     val = str(text).strip()
@@ -37,11 +37,9 @@ def clean_caps_lock(text: str) -> str:
 
 
 def normalize_target_to_infinitive(text: str) -> str:
-    """Преобразует глаголы повелительного наклонения в инфинитивы регламента РОПа."""
     if not text:
         return ""
     val = clean_caps_lock(text)
-
     replacements = [
         (r'\bпродавай\b', 'продавать'), (r'\bфиксируй\b', 'фиксировать'),
         (r'\bзакрывай\b', 'закрывать'), (r'\bуточняй\b', 'уточнять'),
@@ -68,7 +66,6 @@ def normalize_target_to_infinitive(text: str) -> str:
 
 
 def clean_alternative_script(raw_val: str, quote_fallback: str = "") -> str:
-    """Гарантирует полноценный текст двухшаговой связки и отсекает таймкоды."""
     val = str(raw_val or "").strip()
     if re.fullmatch(r"^\d{1,2}:\d{2}$", val) or len(val) < 10:
         val = (
@@ -91,25 +88,23 @@ def append_audit_to_sheet(
     target_sheet_id = (sheet_id or os.getenv("GOOGLE_SHEET_ID") or HARDCODED_SHEET_ID).strip()
     creds = None
 
-    # 1. Попытка авторизации через Streamlit Secrets
+    # 1. Архитектурно надежная авторизация (парсинг цельного JSON)
     try:
-        if "gcp_service_account" in st.secrets:
+        if "GCP_CREDENTIALS" in st.secrets:
+            # Отраслевой стандарт: читаем JSON как единую строку без вмешательства TOML
+            creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        elif "gcp_service_account" in st.secrets:
+            # На случай, если старый блок остался
             creds_dict = dict(st.secrets["gcp_service_account"])
             if "private_key" in creds_dict:
-                # Официальный и самый надежный метод обработки ключей из TOML
                 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-            
             creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        else:
-            raise ValueError("Секция [gcp_service_account] отсутствует в настройках Streamlit Secrets!")
-    except FileNotFoundError:
-        # Глушим ошибку ТОЛЬКО при локальном запуске
+    except Exception:
+        # При локальном запуске (когда секретов нет) плавно переходим к локальному файлу
         creds = None
-    except Exception as e:
-        # Выводим реальную ошибку на боевом сервере
-        raise RuntimeError(f"Сбой при сборке ключа из Streamlit Secrets: {str(e)}")
 
-    # 2. Фолбэк на локальный файл credentials.json
+    # 2. Фолбэк на локальный файл
     if creds is None:
         resolved_creds = (creds_path or os.getenv("CREDENTIALS_FILE") or "credentials.json").strip()
         if not os.path.exists(resolved_creds):
@@ -199,7 +194,6 @@ def append_audit_to_sheet(
     ]
 
     cell_range = f"A{target_row}:Q{target_row}"
-    # ЗАПИСЬ ДАННЫХ
     sheet.update(values=[row_data], range_name=cell_range, value_input_option="USER_ENTERED")
 
     # ФОРМАТИРОВАНИЕ
